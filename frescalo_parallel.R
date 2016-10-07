@@ -1,3 +1,4 @@
+
 # A script to calculate the alpha values for Frescalo 
 # The estimation of trends in species occurence has not been implemented
 #
@@ -7,9 +8,11 @@
 
 # Modified:
 # 6/9/2016 (JY): Data sent to cluster nodes in chunks (variable=chunkSize)
-# 8/9/2012 (JY): Save species frequency file and include expected species richness in output
+# 8/9/2016 (JY): Save species frequency file and include expected species richness in output
+# 6/10/2016 (JY): Include validated trend analysis
 
-#setwd('/home/jon/MEGA/Jack/Frescalo')
+setwd('/home/jon/MEGA/Jack/Frescalo')
+#setwd('/home/jon/MEGA/MainFolder/Jack/Frescalo')
 rm(list=ls())  # Remove all variables from the memory
 
 require(foreach, quietly=T)
@@ -23,15 +26,15 @@ cl <- makeCluster(2)
 registerDoParallel(cl, cores=NULL)
 
 R_star = 0.27
-trend_analysis = FALSE
+trend_analysis = TRUE
 
 # weight.file = './bsbi_hectads_2000_2006_2010_weights.txt'
 # species.file = './bsbi_hectads_2000_2006_2010_sample.txt'
+# outputFilename = './bsbi_hectads_frescalo_out.txt'
 
 weight.file = './TestData/weights.txt'
 species.file = './TestData/Test.txt'
 
-#outputFilename = './bsbi_hectads_frescalo_out.txt'
 outputPrefix = './test'
 
 Phi = 0.74    # The standardisation for recorder effort
@@ -39,7 +42,7 @@ chunkSize = 5 # Number of hectads to pass to each compute node
 
 # Import data
 d = read.table(weight.file, header=F, col.names=c('location1','location2','w','w1','w2','nsim','ndist'), stringsAsFactors=F)
-s = read.table(species.file, header=F, col.names=c('location','species','Year'), stringsAsFactors=F)
+s = read.table(species.file, header=F, col.names=c('location','species','time'), stringsAsFactors=F)
 
 
 ##############################################################
@@ -77,28 +80,34 @@ if (trend_analysis) {
   # Do the Frescalo trend analysis if there are more than 1 year bins (use same location groups as sSplit)
   sSplit2 = split(s, as.factor(s$time))  # Split species data up into year bins
   idx3 = iter(sSplit2)
-  trend.out <- foreach(sData=idx3, .inorder=T, .combine='rbind') %do% {
-    trend(sData, output$freq.out)
+  trend.out <- foreach(s_data=idx3, .inorder=T, .combine='rbind') %dopar% {
+    trend(s_data, output$freq.out)
   }
 }
 
+
 ################################################################
 # Write the output to a text file
-write.table(format(output$frescalo.out, digits=4,zero.print=T, width=10), 
+write.table(format(output$frescalo.out[order(output$frescalo.out$location),], digits=4,zero.print=T, width=10), 
             file=paste(outputPrefix,'_frescalo_out.txt',sep=''), col.names=T, row.names=F, quote=F, sep=' ')
 
-write.table(format(output$freq.out, digits=4, zero.print=T, width=10, scientific=F, justify='left'), 
+write.table(format(output$freq.out[order(output$freq.out$location, output$freq.out$rank),], digits=4, zero.print=T, width=10, scientific=F, justify='left'), 
             file=paste(outputPrefix,'_frescalo_freq.txt',sep=''), col.names=T, row.names=F, quote=F, sep=' ')
+
+if (trend_analysis) {
+  write.table(format(trend.out[order(trend.out$species,trend.out$time),], digits=4, zero.print=T, width=10, scientific=F, justify='left'), 
+              file=paste(outputPrefix,'_frescalo_trend.txt',sep=''), col.names=T, row.names=F, quote=F, sep=' ')
+}
 
 stopCluster(cl)
 gc()
 
-source('../R_Scripts/os2eastnorth.R')
-
-en=os2eastnorth(GR=output$frescalo.out$location, hectad=T)$en
-output$frescalo.out$x = en[,1]
-output$frescalo.out$y = en[,2]
-
-library(ggplot2)
-
-ggplot(data=output$frescalo.out, aes(x=x, y=y, colour=alpha)) + geom_point()
+# source('../R_Scripts/os2eastnorth.R')
+# 
+# en=os2eastnorth(GR=output$frescalo.out$location, hectad=T)$en
+# output$frescalo.out$x = en[,1]
+# output$frescalo.out$y = en[,2]
+# 
+# library(ggplot2)
+# 
+# ggplot(data=output$frescalo.out, aes(x=x, y=y, colour=alpha)) + geom_point()
